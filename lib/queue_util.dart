@@ -23,6 +23,8 @@ class QueueUtil {
   int _mId = 0;
   bool _isCancelQueue = false;
 
+  bool get isEmpty => _taskList.isEmpty;
+
   Future<_TaskInfo> addTask(Function doSomething) {
     _isCancelQueue = false;
     _mId++;
