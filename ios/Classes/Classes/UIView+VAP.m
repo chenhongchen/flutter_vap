@@ -304,11 +304,23 @@ NSInteger const VapMaxCompatibleVersion = 2;
     //filePath check
     if (!filePath || filePath.length == 0) {
         VAP_Error(kQGVAPModuleCommon, @"playHWDMP4 error! has no filePath!");
+        [self.hwd_callbackQueue addOperationWithBlock:^{
+            //此处必须延迟释放，避免野指针
+            if ([self.hwd_Delegate respondsToSelector:@selector(viewDidFailPlayMP4:)]) {
+                [self.hwd_Delegate viewDidFailPlayMP4:[NSError errorWithDomain:@"" code:1000 userInfo:nil]];
+            }
+        }];
         return ;
     }
     NSFileManager *fileMgr = [NSFileManager defaultManager];
     if (![fileMgr fileExistsAtPath:filePath]) {
         VAP_Error(kQGVAPModuleCommon, @"playHWDMP4 error! fileNotExistsAtPath filePath:%#", filePath);
+        [self.hwd_callbackQueue addOperationWithBlock:^{
+            //此处必须延迟释放，避免野指针
+            if ([self.hwd_Delegate respondsToSelector:@selector(viewDidFailPlayMP4:)]) {
+                [self.hwd_Delegate viewDidFailPlayMP4:[NSError errorWithDomain:@"" code:1000 userInfo:nil]];
+            }
+        }];
         return ;
     }
     self.hwd_isFinish = NO;
@@ -336,13 +348,15 @@ NSInteger const VapMaxCompatibleVersion = 2;
     
     if (configManager.model.info.version > VapMaxCompatibleVersion) {
         VAP_Error(kQGVAPModuleCommon, @"playHWDMP4 error! not compatible vap version:%@!", @(configManager.model.info.version));
-        [self stopHWDMP4];
+//        [self stopHWDMP4];
+        [self decoderDidFailDecode:nil error:[NSError errorWithDomain:@"" code:1001 userInfo:nil]];
         return ;
     }
     
     if (!configManager.hasValidConfig && !self.vap_enableOldVersion) {
         VAP_Error(kQGVAPModuleCommon, @"playHWDMP4 error! don't has vapc box and enableOldVersion is false!");
-        [self stopHWDMP4];
+//        [self stopHWDMP4];
+        [self decoderDidFailDecode:nil error:[NSError errorWithDomain:@"" code:1002 userInfo:nil]];
         return ;
     }
     //reset
@@ -361,7 +375,8 @@ NSInteger const VapMaxCompatibleVersion = 2;
     
     if ([[UIDevice currentDevice] hwd_isSimulator]) {
         VAP_Error(kQGVAPModuleCommon, @"playHWDMP4 error! not allowed in Simulator!");
-        [self stopHWDMP4];
+//        [self stopHWDMP4];
+        [self decoderDidFailDecode:nil error:[NSError errorWithDomain:@"" code:1003 userInfo:nil]];
         return ;
     }
     if (!self.vap_renderQueue) {
@@ -384,6 +399,7 @@ NSInteger const VapMaxCompatibleVersion = 2;
         if (self.hwd_onPause || self.hwd_isFinish) {
             return ;
         }
+        __block  int nilNum = 0;
         //不能将self.hwd_onPause判断加到while语句中！会导致releasepool不断上涨
         while (YES) {
             @autoreleasepool {
@@ -398,7 +414,16 @@ NSInteger const VapMaxCompatibleVersion = 2;
                 __block QGMP4AnimatedImageFrame *nextFrame = nil;
                 dispatch_sync(dispatch_get_main_queue(), ^{
                     nextFrame = [self hwd_displayNext];
+                    if (nextFrame == nil) {
+                        nilNum += 1;
+                    } else {
+                        nilNum = 0;
+                    }
                 });
+                if (nilNum> 10) {
+                    [self decoderDidFailDecode:nil error:[NSError errorWithDomain:@"" code:1001 userInfo:nil]];
+                    break;
+                }
                 NSTimeInterval duration = nextFrame.duration/1000.0;
                 if (duration == 0) {
                     duration = durationForWaitingFrame;
